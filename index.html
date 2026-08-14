@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VolX Test Campaign — Live Dashboard</title>
+<style>
+  :root {
+    --paper: #F6F9FA; --ink: #14242E; --muted: #5B7180; --hairline: #D8E2E7;
+    --accent: #0B7285; --accent-soft: rgba(11, 114, 133, 0.10);
+    --alarm: #B45309; --alarm-soft: rgba(180, 83, 9, 0.14);
+    --good: #1C7C44; --bad: #B42318; --card: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #101B21; --ink: #E6EEF2; --muted: #8BA3B0; --hairline: #24343D;
+      --accent: #4EB8D5; --accent-soft: rgba(78, 184, 213, 0.13);
+      --alarm: #E8A23D; --alarm-soft: rgba(232, 162, 61, 0.16);
+      --good: #5BC98A; --bad: #F08A80; --card: #16242C;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 15px/1.55 "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 36px 22px 60px; }
+  .eyebrow { font: 600 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+             letter-spacing: 0.14em; color: var(--accent); text-transform: uppercase; }
+  h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin: 8px 0 4px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 34px 0 10px; }
+  .sub { color: var(--muted); margin: 0; font-size: 13.5px; }
+  .band { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+          gap: 10px; margin: 22px 0 4px; }
+  .stat { background: var(--card); border: 1px solid var(--hairline);
+          border-radius: 10px; padding: 12px 14px; }
+  .stat .k { font: 600 10.5px/1.3 ui-monospace, Menlo, monospace;
+             letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; }
+  .stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 3px; }
+  .stat .n { font-size: 11.5px; color: var(--muted); }
+  .fig { background: var(--card); border: 1px solid var(--hairline);
+         border-radius: 10px; padding: 14px 14px 6px; margin: 12px 0; }
+  .fig figcaption { font-size: 12px; color: var(--muted); padding: 4px 2px 8px; }
+  .fig svg { display: block; width: 100%; height: auto; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted);
+            padding: 2px 2px 6px; flex-wrap: wrap; }
+  .legend span::before { content: ""; display: inline-block; width: 13px; height: 3px;
+            border-radius: 2px; margin-right: 5px; vertical-align: 3px; background: var(--c); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { text-align: left; font: 600 10px/1.3 ui-monospace, Menlo, monospace;
+       letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted);
+       border-bottom: 1px solid var(--hairline); padding: 6px 8px; }
+  td { border-bottom: 1px solid var(--hairline); padding: 6px 8px; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--hairline);
+               border-radius: 10px; padding: 2px 6px; margin: 12px 0; }
+  tr.run { cursor: pointer; }
+  tr.run:hover td { background: var(--accent-soft); }
+  .pill { display: inline-block; font: 600 10px/1 ui-monospace, Menlo, monospace;
+          padding: 4px 7px; border-radius: 999px; }
+  .pill.ok { background: var(--accent-soft); color: var(--accent); }
+  .pill.warn { background: var(--alarm-soft); color: var(--alarm); }
+  .tank { display: inline-block; font: 600 10px/1 ui-monospace, Menlo, monospace;
+          padding: 3px 6px; border-radius: 5px; border: 1px solid var(--hairline);
+          color: var(--muted); }
+  .note { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px;
+          padding: 12px 15px; font-size: 13px; color: var(--muted); margin: 12px 0; }
+  .commentary { background: var(--card); border: 1px solid var(--hairline);
+                border-left: 3px solid var(--accent); border-radius: 10px;
+                padding: 14px 18px; margin: 12px 0; font-size: 14px; }
+  .commentary h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600;
+                   letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+                   font-family: ui-monospace, Menlo, monospace; }
+  .commentary ul { margin: 0; padding-left: 20px; }
+  .commentary li { margin: 6px 0; }
+  .commentary .warn { color: var(--alarm); font-weight: 600; }
+  .commentary .good { color: var(--good); font-weight: 600; }
+  .err { color: var(--bad); font-weight: 600; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         margin-right: 6px; vertical-align: -1px; }
+  .back { display: inline-block; margin: 8px 0 0; color: var(--accent); cursor: pointer;
+          font-weight: 600; font-size: 14px; text-decoration: none; }
+  .back:hover { text-decoration: underline; }
+  .hidden { display: none; }
+  .foot { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--hairline);
+          font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">VolX · Phase 1 Data Campaign</div>
+  <h1 id="title">Test Campaign — Live Dashboard</h1>
+  <p class="sub">Each run below is one oxygen tank recorded on the VolX bench logger — flow measured
+  20 times a second from the moment the valve opens until the tank runs out. The goal: learn how
+  tanks behave as they empty, so the product can warn people <i>before</i> the oxygen stops.</p>
+  <p class="sub" id="updated">Loading…</p>
+  <a class="back hidden" id="back">← All runs</a>
+
+  <!-- ============ CAMPAIGN VIEW ============ -->
+  <div id="overview">
+    <div class="band" id="stats"></div>
+
+    <div class="commentary" id="campaign-commentary"></div>
+
+    <h2>Runs by tank size <span class="sub" style="font-weight:400">— click a run for detail</span></h2>
+    <div id="runtables"></div>
+
+    <h2>Flow over each run</h2>
+    <div id="flowfigs"></div>
+
+    <h2>The last 75 minutes of every emptied tank</h2>
+    <figure class="fig">
+      <div class="legend" id="leg2"></div>
+      <svg id="c2" viewBox="0 0 980 300" role="img" aria-label="Final 75 minutes per run aligned at zero flow"></svg>
+      <figcaption>Every emptied tank's final stretch, lined up at the moment the oxygen stopped.
+      The takeaway: bigger tanks fade over a longer window — more time for a warning. Small
+      41 cu ft tanks collapse in ~10–15 minutes; 127 cu ft tanks take closer to an hour.</figcaption>
+    </figure>
+
+    <div class="note">
+      Historical context (pre-cloud): VOLX_004 large-tank run — 19.4 h, 1.4 M samples,
+      2,242.7 L, 18.7 min provisional alarm lead, ~55 min knee. Two additional 41 cu ft
+      runs were lost to SD corruption before the pipeline moved to the cloud.
+    </div>
+  </div>
+
+  <!-- ============ RUN DETAIL VIEW ============ -->
+  <div id="detail" class="hidden">
+    <div class="band" id="d-stats"></div>
+    <div class="commentary" id="d-commentary"></div>
+
+    <h2>Flow</h2>
+    <figure class="fig">
+      <svg id="d-c1" viewBox="0 0 980 300" role="img" aria-label="Flow versus time for this run"></svg>
+      <figcaption id="d-c1cap"></figcaption>
+    </figure>
+
+    <h2>Regulator adjustments</h2>
+    <div class="tablewrap"><table id="d-adjust"></table></div>
+
+    <div id="d-kneeblock">
+      <h2>Depletion knee</h2>
+      <figure class="fig">
+        <svg id="d-c2" viewBox="0 0 980 300" role="img" aria-label="Final 75 minutes of this run"></svg>
+        <figcaption>Final 75 minutes, 15-second averages, x = minutes before end of flow.</figcaption>
+      </figure>
+    </div>
+
+    <h2>Latched plateaus</h2>
+    <div class="tablewrap"><table id="d-plateaus"></table></div>
+  </div>
+
+  <div class="foot">
+    Data: Supabase (this page queries live on load) · analysis views refresh every 5 min
+    after a session closes · commentary is generated automatically from the run metrics ·
+    local deep-dive: <code>tools/fetch_runs.py</code> + <code>tools/analyze.py</code>.
+  </div>
+</div>
+
+<script>
+const URLBASE = "https://ijgjesvmgogqvbyshhoe.supabase.co";
+const KEY = "sb_publishable_Hrk6TKL6HaZXshy9Y7TZ0Q_JidAbH1b";
+const COLORS = ["#0B7285", "#7048B6", "#1C7C44", "#B45309", "#A62E6E", "#3D6B8E", "#8A6D1C", "#B42318"];
+
+async function q(path) {
+  const r = await fetch(`${URLBASE}/rest/v1/${path}`, {
+    headers: { apikey: KEY, Authorization: "Bearer " + KEY } });
+  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+  return r.json();
+}
+
+// The server silently caps any response at 1000 rows; page until short.
+async function qAll(path) {
+  const out = [];
+  for (;;) {
+    const page = await q(`${path}&offset=${out.length}&limit=1000`);
+    out.push(...page);
+    if (page.length < 1000) return out;
+  }
+}
+
+const fmtMin = s => s == null ? "—" : (s / 60).toFixed(1) + " min";
+const fmtDur = s => s == null ? "—" : (s >= 5400 ? (s / 3600).toFixed(1) + " h" : (s / 60).toFixed(1) + " min");
+const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+// Tank label from capacity: named sizes where known, liters otherwise.
+function tankLabel(cap) {
+  if (!cap) return "unspecified";
+  if (Math.abs(cap - 1161) < 10) return "41 cu ft";
+  if (Math.abs(cap - 2265) < 15) return "80 cu ft";
+  if (Math.abs(cap - 3596) < 25) return "127 cu ft";
+  if (Math.abs(cap - 1699) < 15) return "60 cu ft";
+  if (Math.abs(cap - 413) < 10) return "D";
+  if (Math.abs(cap - 680) < 10) return "E";
+  return Math.round(cap) + " L";
+}
+
+// Campaign full-to-empty targets per tank size (sizes without a target show count only)
+const SERIES_TARGETS = { "41 cu ft": 6, "127 cu ft": 2 };
+
+// Plain-language outcome for each session status
+const OUTCOME = {
+  recording:   ["IN PROGRESS", "warn"],
+  closed:      ["COMPLETED", "ok"],
+  autostopped: ["RAN TO EMPTY", "ok"],
+  aborted:     ["CUT SHORT", "warn"],
+};
+const outcomePill = st => {
+  const [label, cls] = OUTCOME[st] || [String(st || "?").toUpperCase(), "warn"];
+  return `<span class="pill ${cls}">${label}</span>`;
+};
+
+// ---- automated color commentary ----------------------------------------
+// Rules mirror the manual analyses done on runs 004/009/011: integrity,
+// integrator-vs-rated, click vs staircase discrimination, hysteresis,
+// knee speed, and alarm-lead adequacy.
+function plateauFeatures(run) {
+  const segs = (run.plateaus || []).filter(p => p.t1 - p.t0 >= 20);
+  const clicks = [];        // large fast level changes = user detent changes
+  let staircase = 0;        // consecutive ~0.15 slm descents = depletion
+  const byLpm = {};
+  for (let i = 1; i < segs.length; i++) {
+    const d = segs[i].plateau - segs[i - 1].plateau;
+    if (Math.abs(d) > 0.5) clicks.push({ t: segs[i].t0, from: segs[i - 1].plateau, to: segs[i].plateau });
+    else if (d < -0.05) staircase++;
+  }
+  for (const s of segs) {
+    if (s.lpm > 0 && s.t1 - s.t0 >= 120) (byLpm[s.lpm] = byLpm[s.lpm] || []).push(s);
+  }
+  const hysteresis = [];
+  for (const [lpm, list] of Object.entries(byLpm)) {
+    if (list.length >= 2) {
+      const flows = list.map(s => s.plateau);
+      const spread = Math.max(...flows) - Math.min(...flows);
+      if (spread / Math.min(...flows) > 0.05) {
+        hysteresis.push({ lpm, flows, pct: 100 * spread / Math.min(...flows) });
+      }
+    }
+  }
+  return { segs, clicks, staircase, hysteresis };
+}
+
+// Believed regulator setting over time. Raw detent_lpm staircases through
+// settings nobody touched during depletion, so the believed setting changes
+// ONLY on step changes (real clicks) and holds through ramps (depletion).
+function believedTimeline(run) {
+  const f = plateauFeatures(run);
+  const segs = f.segs.filter(s => s.lpm != null);
+  if (!segs.length) return { timeline: [], adjustments: [] };
+  const clickTimes = new Set(f.clicks.map(c => c.t));
+  const timeline = [];   // {t0, t1, lpm, label}
+  const adjustments = [];
+  let cur = null;
+  for (const s of segs) {
+    if (cur === null || clickTimes.has(s.t0)) {
+      if (cur !== null) {
+        adjustments.push({
+          t: s.t0, fromLpm: cur.lpm, toLpm: s.lpm,
+          fromFlow: cur.lastFlow, toFlow: s.plateau,
+        });
+        cur.t1 = s.t0;
+        timeline.push(cur);
+      }
+      cur = { t0: s.t0, t1: s.t1, lpm: s.lpm, lastFlow: s.plateau };
+    } else {
+      cur.t1 = s.t1;              // ramp re-latch: setting believed unchanged
+      cur.lastFlow = s.plateau;
+    }
+  }
+  if (cur) { cur.t1 = run.end_flow_s || run.dur_s; timeline.push(cur); }
+  return { timeline, adjustments };
+}
+
+function runCommentary(run) {
+  const out = [];
+  const f = plateauFeatures(run);
+  const short = run.dur_s < 300;
+
+  if (short) {
+    out.push("Short bench session — useful as a pipeline check, excluded from campaign statistics and charts.");
+  }
+  if (run.cad_bad === 0 && run.bit11_rows === 0 && run.crc_errors === 0) {
+    out.push(`<span class="good">Data integrity flawless:</span> ${run.n_rows.toLocaleString()} samples, every interval on the 50 ms grid, zero CRC errors, sensor never fell into smoothing.`);
+  } else {
+    out.push(`<span class="warn">Data quality events:</span> ${run.cad_bad} cadence outliers, ${run.bit11_rows} smoothing rows, ${run.crc_errors} CRC errors — worth a closer look with the local tools.`);
+  }
+  if (run.pct_of_rated != null && !short) {
+    const p = run.pct_of_rated;
+    if (p >= 90 && p <= 110) {
+      out.push(`Delivered <b>${p.toFixed(1)}%</b> of the tank's rated capacity — a full-to-empty run, and an independent ${Math.abs(p - 100).toFixed(1)}% cross-check on the volume integrator.`);
+    } else if (p < 90) {
+      out.push(`Partial run: ${p.toFixed(1)}% of rated capacity delivered — the tank was not emptied (or didn't start full), so no depletion tail here.`);
+    } else {
+      out.push(`<span class="warn">Delivered ${p.toFixed(0)}% of rated</span> — the entered tank size is probably wrong for this run.`);
+    }
+  }
+  const bt = believedTimeline(run);
+  if (bt.timeline.length && !short) {
+    const path = bt.timeline.map(s => s.lpm >= 0 ? s.lpm : "?").join(" → ");
+    out.push(`Believed regulator setting: <b>${path}</b>` +
+      (bt.adjustments.length
+        ? ` — ${bt.adjustments.length} user adjustment${bt.adjustments.length > 1 ? "s" : ""} (` +
+          bt.adjustments.map(a => `${a.fromLpm}→${a.toLpm} LPM at ${fmtMin(a.t)}`).join(", ") + ")."
+        : " — no adjustments during the run.") +
+      (f.staircase >= 4 ? " Setting held constant through the depletion roll-off (ramps are not clicks)." : ""));
+  }
+  for (const h of f.hysteresis) {
+    out.push(`<span class="warn">Regulator hysteresis at setting ${h.lpm}:</span> delivered ` +
+      h.flows.map(x => x.toFixed(2)).join(" then ") +
+      ` slm (${h.pct.toFixed(0)}% spread) on separate visits — same click, different flow. Depletion logic must anchor to the measured plateau.`);
+  }
+  if (f.staircase >= 4) {
+    const kneeStart = f.segs.filter(s => s.t1 - s.t0 >= 120 && s.plateau > 1).pop();
+    const kneeMin = kneeStart && run.end_flow_s ? (run.end_flow_s - kneeStart.t1) / 60 : null;
+    out.push(`Full depletion staircase captured (${f.staircase} descending re-latches)` +
+      (kneeMin ? ` — collapse from the last stable plateau to zero took ~${kneeMin.toFixed(0)} min.` : "."));
+  }
+  if (run.alarm_lead_s != null) {
+    const lead = run.alarm_lead_s / 60;
+    if (lead < 2) {
+      out.push(`<span class="warn">Alarm lead was only ${fmtMin(run.alarm_lead_s)}</span> at ${run.alarm_flow.toFixed(2)} slm — the provisional detector's re-baselining problem; the anchor-baseline redesign is sized to fix exactly this.`);
+    } else {
+      out.push(`Alarm fired ${fmtMin(run.alarm_lead_s)} before end of flow at ${run.alarm_flow.toFixed(2)} slm.`);
+    }
+  } else if (!short && f.staircase >= 4) {
+    out.push(`<span class="warn">No depletion alarm fired</span> despite a captured roll-off — check detector thresholds against this run.`);
+  }
+  if (run.status === "autostopped") {
+    out.push(`<span class="good">Unattended finish:</span> zero-flow auto-stop closed the session cleanly; the latched alarm kept sounding until acknowledged.`);
+  } else if (run.status === "aborted") {
+    out.push(`<span class="warn">Session was cut short</span> (power loss or a sensor fault) — data up to that moment is intact; at most one second was lost.`);
+  }
+  return out;
+}
+
+function campaignCommentary(runs) {
+  const out = [];
+  const real = runs.filter(r => r.dur_s >= 300);
+  const full = real.filter(r => r.pct_of_rated >= 90 && r.pct_of_rated <= 110);
+  const caps = [...new Set(real.map(r => tankLabel(r.tank_capacity_l)))];
+  if (!real.length) {
+    out.push("No campaign runs in the cloud yet — bench checks only. Press the button on a real tank.");
+    return out;
+  }
+  out.push(`${real.length} campaign run${real.length > 1 ? "s" : ""} in the cloud (${full.length} full-to-empty), on ${caps.join(" / ")} tank${caps.length > 1 ? "s" : ""}.`);
+  if (full.length) {
+    const errs = full.map(r => Math.abs(r.pct_of_rated - 100));
+    out.push(`Volume integrator vs rated capacity: within ${Math.max(...errs).toFixed(1)}% on every full run — the user-entered-tank-size fuel gauge remains trustworthy.`);
+  }
+  // Warning time grouped by tank size — the campaign's central question
+  const bySize = {};
+  for (const r of real) {
+    if (r.alarm_lead_s == null) continue;
+    (bySize[tankLabel(r.tank_capacity_l)] = bySize[tankLabel(r.tank_capacity_l)] || [])
+      .push(r.alarm_lead_s / 60);
+  }
+  const sizes = Object.keys(bySize);
+  if (sizes.length) {
+    const parts = sizes.map(s => {
+      const v = bySize[s].sort((a, b) => a - b);
+      return `${s}: ${v.length > 1 ? v[0].toFixed(1) + "–" + v[v.length - 1].toFixed(1) : v[0].toFixed(1)} min`;
+    });
+    out.push(`Warning time before the tank ran out, with today's provisional detector — ${parts.join(" · ")}. ` +
+      `Bigger tanks fade more slowly, so they give more notice.`);
+    const worst = Math.min(...[].concat(...Object.values(bySize)));
+    if (worst < 2) {
+      out.push(`<span class="warn">On the smallest tanks the warning was under 2 minutes</span> — not enough. The planned detector redesign (tested against these same recordings) projects roughly 10× more notice at the same sensitivity.`);
+    }
+  }
+  const hys = real.flatMap(r => plateauFeatures(r).hysteresis);
+  if (hys.length) {
+    out.push(`Regulator hysteresis reproduced in ${hys.length} instance${hys.length > 1 ? "s" : ""} across the campaign — now an established property, not an anecdote.`);
+  }
+  return out;
+}
+
+// ---- charts --------------------------------------------------------------
+function draw(svgId, series, opts) {
+  const svg = document.getElementById(svgId);
+  const W = 980, H = 300, L = 46, R = 14, T = 16, B = 32;
+  const X = t => L + (t - opts.x0) / (opts.x1 - opts.x0) * (W - L - R);
+  const Y = v => H - B - Math.min(v, opts.ymax) / opts.ymax * (H - T - B);
+  let s = "";
+  if (opts.alarmT != null) {
+    s += `<rect x="${X(opts.alarmT).toFixed(1)}" y="${T}" width="${(X(opts.x1) - X(opts.alarmT)).toFixed(1)}" height="${H - T - B}" fill="var(--alarm-soft)"/>`;
+  }
+  for (let v = 0; v <= opts.ymax; v += opts.ystep) {
+    s += `<line x1="${L}" y1="${Y(v)}" x2="${W-R}" y2="${Y(v)}" stroke="var(--hairline)"/>` +
+         `<text x="${L-7}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="Menlo,monospace">${v}</text>`;
+  }
+  for (let t = Math.ceil(opts.x0 / opts.xstep) * opts.xstep; t <= opts.x1 + 1e-9; t += opts.xstep) {
+    s += `<text x="${X(t)}" y="${H-B+17}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="Menlo,monospace">${Math.round(t * 10) / 10}</text>`;
+  }
+  s += `<text x="${L}" y="${H-2}" font-size="10.5" fill="var(--muted)" font-family="Menlo,monospace">${opts.xlabel}</text>`;
+  s += `<text x="${L-34}" y="${T-3}" font-size="10.5" fill="var(--muted)" font-family="Menlo,monospace">slm</text>`;
+  for (const ser of series) {
+    let path = "";
+    for (const [t, v] of ser.data) {
+      if (t < opts.x0 || t > opts.x1) continue;
+      path += (path ? " L " : "M ") + X(t).toFixed(1) + " " + Y(v).toFixed(1);
+    }
+    const dash = ser.dash ? ' stroke-dasharray="7 5"' : "";
+    s += `<path d="${path}" fill="none" stroke="${ser.color}" stroke-width="${ser.dash ? 1.6 : 2}"${dash} stroke-linejoin="round"/>`;
+  }
+  svg.innerHTML = s;
+}
+
+function legend(id, series) {
+  document.getElementById(id).innerHTML = series.map(s =>
+    `<span style="--c:${s.color}">${s.name}</span>`).join("");
+}
+
+// ---- views ---------------------------------------------------------------
+let RUNS = [], BINS = null, KNEE = null;
+
+function statCard(k, v, n, cls) {
+  return `<div class="stat"><div class="k">${k}</div><div class="v ${cls || ""}">${v}</div><div class="n">${n || ""}</div></div>`;
+}
+
+function showOverview() {
+  document.getElementById("overview").classList.remove("hidden");
+  document.getElementById("detail").classList.add("hidden");
+  document.getElementById("back").classList.add("hidden");
+  document.getElementById("title").textContent = "Test Campaign — Live Dashboard";
+  location.hash = "";
+}
+
+async function showDetail(sid) {
+  const r = RUNS.find(x => x.session_id === sid);
+  if (!r) return;
+  document.getElementById("overview").classList.add("hidden");
+  document.getElementById("detail").classList.remove("hidden");
+  document.getElementById("back").classList.remove("hidden");
+  const day = (r.started_at || "").slice(0, 10);
+  document.getElementById("title").textContent = `Run ${day} — ${tankLabel(r.tank_capacity_l)} tank`;
+  location.hash = sid.slice(0, 8);
+
+  const btEarly = believedTimeline(r);
+  const quality = (r.cad_bad === 0 && r.bit11_rows === 0 && r.crc_errors === 0)
+    ? ["clean", ""] : [`${r.cad_bad}/${r.bit11_rows}/${r.crc_errors}`, "warn"];
+  document.getElementById("d-stats").innerHTML =
+    statCard("Started", (r.started_at || "").slice(0, 16).replace("T", " "),
+             (OUTCOME[r.status] || [r.status])[0]) +
+    statCard("Duration", fmtDur(r.dur_s), `${(r.n_rows || 0).toLocaleString()} samples`) +
+    statCard("Volume", (r.vol_l || 0).toFixed(1) + " L",
+             r.pct_of_rated ? r.pct_of_rated.toFixed(1) + "% of rated" : "no capacity set") +
+    statCard("Tare", (r.tare_slm != null ? r.tare_slm.toFixed(4) : "—") + " slm", "session zero") +
+    statCard("Warning before empty", fmtMin(r.alarm_lead_s),
+             r.alarm_flow != null ? "at " + r.alarm_flow.toFixed(2) + " slm" : "no alarm",
+             r.alarm_lead_s != null && r.alarm_lead_s < 120 ? "warn" : "") +
+    statCard("Quality", quality[0], "cad/b11/crc", quality[1]) +
+    statCard("Adjustments", btEarly.adjustments.length,
+             btEarly.timeline.length
+               ? "setting: " + btEarly.timeline.map(s => s.lpm >= 0 ? s.lpm : "?").join(" → ")
+               : "");
+
+  document.getElementById("d-commentary").innerHTML =
+    "<h3>Automated read</h3><ul>" +
+    runCommentary(r).map(c => `<li>${c}</li>`).join("") + "</ul>";
+
+  const bins = (await qAll(`chart_bins_1m?select=minute,flow_slm&session_id=eq.${sid}&order=minute.asc`))
+    .map(b => [b.minute / 60, b.flow_slm]);
+  const maxH = Math.max(0.1, ...bins.map(b => b[0]));
+  const maxF = Math.max(1, ...bins.map(b => b[1]));
+  // Believed-setting step trace: horizontal at the setting's LPM value,
+  // vertical jump at each user adjustment.
+  const bt = btEarly;
+  const stepData = [];
+  for (const seg of bt.timeline) {
+    if (seg.lpm < 0) continue;
+    stepData.push([seg.t0 / 3600, seg.lpm], [seg.t1 / 3600, seg.lpm]);
+  }
+  const series = [{ data: bins, color: COLORS[0] }];
+  if (stepData.length) series.push({ data: stepData, color: "var(--alarm)", dash: true });
+  draw("d-c1", series,
+       { x0: 0, x1: Math.max(maxH * 1.02, 0.1), ymax: Math.ceil(Math.max(maxF, ...stepData.map(p => p[1])) + 0.5),
+         ystep: Math.max(1, Math.ceil((maxF + 0.5) / 4)),
+         xstep: Math.max(0.25, Math.ceil(maxH / 8 * 4) / 4), xlabel: "hours into session",
+         alarmT: r.alarm_t_s != null ? r.alarm_t_s / 3600 : null });
+  document.getElementById("d-c1cap").innerHTML =
+    `Solid = delivered flow (slm, 1-minute averages). ` +
+    `<span style="color:var(--alarm)">Dashed</span> = believed regulator setting (LPM) — changes only on detected clicks, holds through depletion ramps.` +
+    (r.alarm_t_s != null ? " Amber region = depletion alarm latched." : "");
+
+  document.getElementById("d-adjust").innerHTML =
+    `<tr><th>Time</th><th>Setting</th><th>Delivered before</th><th>Delivered after</th></tr>` +
+    (bt.adjustments.length
+      ? bt.adjustments.map(a => `<tr>
+          <td class="num">${fmtMin(a.t)}</td>
+          <td class="num"><b>${a.fromLpm} → ${a.toLpm} LPM</b></td>
+          <td class="num">${a.fromFlow.toFixed(2)} slm</td>
+          <td class="num">${a.toFlow.toFixed(2)} slm</td></tr>`).join("")
+      : `<tr><td colspan="4" style="color:var(--muted)">No adjustments detected — setting held for the whole run.</td></tr>`);
+
+  const kneeOk = r.end_flow_s && r.pct_of_rated >= 90;
+  document.getElementById("d-kneeblock").classList.toggle("hidden", !kneeOk);
+  if (kneeOk) {
+    const kb = (await qAll(`chart_bins_knee?select=bin,flow_slm&session_id=eq.${sid}&order=bin.asc`))
+      .map(b => [b.bin * 15 / 60, b.flow_slm]);
+    draw("d-c2", [{ data: kb, color: COLORS[0] }],
+         { x0: -75, x1: 2, ymax: Math.ceil(Math.max(1, ...kb.map(b => b[1])) + 0.5), ystep: 2,
+           xstep: 10, xlabel: "minutes before end of flow",
+           alarmT: r.alarm_lead_s != null ? -r.alarm_lead_s / 60 : null });
+  }
+
+  const segs = (r.plateaus || []).filter(p => p.t1 - p.t0 >= 5);
+  document.getElementById("d-plateaus").innerHTML =
+    `<tr><th>From</th><th>To</th><th>Duration</th><th>Latched</th><th>Classified</th></tr>` +
+    segs.map(p => `<tr>
+      <td class="num">${fmtMin(p.t0)}</td><td class="num">${fmtMin(p.t1)}</td>
+      <td class="num">${fmtDur(p.t1 - p.t0)}</td>
+      <td class="num">${p.plateau != null ? p.plateau.toFixed(3) + " slm" : "—"}</td>
+      <td class="num">${p.lpm >= 0 ? p.lpm + " LPM" : "unclassified"}</td></tr>`).join("");
+  window.scrollTo(0, 0);
+}
+
+(async () => {
+  try {
+    RUNS = (await q("run_summary?select=*&order=started_at.asc")).filter(r => r.n_rows > 0);
+    const big = RUNS.filter(r => r.dur_s >= 300);
+
+    const nRows = RUNS.reduce((a, r) => a + (r.n_rows || 0), 0);
+    const vol = RUNS.reduce((a, r) => a + (r.vol_l || 0), 0);
+    const hours = RUNS.reduce((a, r) => a + (r.dur_s || 0), 0) / 3600;
+    const crc = RUNS.reduce((a, r) => a + (r.crc_errors || 0), 0);
+    const cad = RUNS.reduce((a, r) => a + (r.cad_bad || 0), 0);
+    const leads = big.filter(r => r.alarm_lead_s != null);
+    // Group runs by tank size, largest first
+    const groups = {};
+    for (const r of RUNS) {
+      const l = tankLabel(r.tank_capacity_l);
+      (groups[l] = groups[l] || []).push(r);
+    }
+    const groupOrder = Object.keys(groups).sort((a, b) =>
+      (groups[b][0].tank_capacity_l || 0) - (groups[a][0].tank_capacity_l || 0));
+
+    document.getElementById("stats").innerHTML =
+      statCard("Tanks recorded", RUNS.length, "recording sessions in the cloud") +
+      statCard("Measurements", nRows.toLocaleString(), `${crc} data errors in ${hours.toFixed(1)} h`) +
+      statCard("Oxygen recorded", vol >= 2000 ? (vol / 1000).toFixed(1) + " kL" : vol.toFixed(0) + " L",
+               "total gas through the sensor") +
+      groupOrder.filter(l => l !== "unspecified").map(label => {
+        const n = groups[label].filter(r => r.dur_s >= 300 && r.pct_of_rated > 90).length;
+        const t = SERIES_TARGETS[label];
+        return statCard(label + " tanks", t ? `${n} / ${t}` : String(n),
+                        "recorded full-to-empty");
+      }).join("");
+
+    document.getElementById("campaign-commentary").innerHTML =
+      "<h3>Automated read — campaign</h3><ul>" +
+      campaignCommentary(RUNS).map(c => `<li>${c}</li>`).join("") + "</ul>";
+
+    const runRow = r => {
+      const i = big.indexOf(r);
+      const c = i >= 0 ? COLORS[i % COLORS.length] : "var(--hairline)";
+      const quality = (r.cad_bad === 0 && r.bit11_rows === 0 && r.crc_errors === 0)
+        ? "clean" : `<span class="err">cad ${r.cad_bad} · b11 ${r.bit11_rows} · crc ${r.crc_errors}</span>`;
+      const nAdj = believedTimeline(r).adjustments.length;
+      return `<tr class="run" data-sid="${r.session_id}">
+        <td><span class="dot" style="background:${c}"></span>${(r.started_at || "").slice(0, 10)}</td>
+        <td class="num">${(r.started_at || "").slice(11, 16)}</td>
+        <td>${outcomePill(r.status)}</td>
+        <td class="num">${fmtDur(r.dur_s)}</td>
+        <td class="num">${(r.vol_l || 0).toFixed(1)} L</td>
+        <td class="num">${r.pct_of_rated ? r.pct_of_rated.toFixed(0) + "%" : "—"}</td>
+        <td class="num">${r.dur_s >= 300 ? nAdj : "—"}</td>
+        <td class="num">${fmtMin(r.alarm_lead_s)}</td>
+        <td>${quality}</td></tr>`;
+    };
+    document.getElementById("runtables").innerHTML = groupOrder.map(label => {
+      const rs = groups[label].slice().reverse();
+      const cap = groups[label][0].tank_capacity_l;
+      return `<h2 style="font-size:15.5px; margin:22px 0 6px">${label} tanks
+          <span class="sub" style="font-weight:400">${cap ? "— " + Math.round(cap).toLocaleString() + " L of oxygen when full" : ""}</span></h2>
+        <div class="tablewrap"><table>
+        <tr><th>Date</th><th>Start</th><th>Outcome</th><th>Length</th>
+        <th>Oxygen delivered</th><th>% of tank</th><th>Dial changes</th>
+        <th>Warning before empty</th><th>Data quality</th></tr>` +
+        rs.map(runRow).join("") + `</table></div>`;
+    }).join("");
+    document.querySelectorAll("tr.run").forEach(tr =>
+      tr.addEventListener("click", () => showDetail(tr.dataset.sid)));
+    document.getElementById("back").addEventListener("click", showOverview);
+
+    if (big.length) {
+      const ids = big.map(r => r.session_id);
+      [BINS, KNEE] = await Promise.all([
+        qAll(`chart_bins_1m?select=session_id,minute,flow_slm&session_id=in.(${ids.join(",")})&order=session_id.asc,minute.asc`),
+        qAll(`chart_bins_knee?select=session_id,bin,flow_slm&session_id=in.(${ids.join(",")})&order=session_id.asc,bin.asc`),
+      ]);
+
+      // One flow chart per tank size — durations differ too much to share an axis
+      const figHost = document.getElementById("flowfigs");
+      figHost.innerHTML = "";
+      groupOrder.forEach((label, gi) => {
+        const rs = groups[label].filter(r => big.includes(r));
+        if (!rs.length) return;
+        let maxH = 0.5, maxF = 1;
+        const series = rs.map(r => {
+          const i = big.indexOf(r);
+          const data = BINS.filter(b => b.session_id === r.session_id)
+                           .map(b => [b.minute / 60, b.flow_slm]);
+          for (const [t, v] of data) { maxH = Math.max(maxH, t); maxF = Math.max(maxF, v); }
+          return { name: `${(r.started_at || "").slice(5, 10)} · ${fmtDur(r.dur_s)}`,
+                   color: COLORS[i % COLORS.length], data };
+        });
+        const fig = document.createElement("figure");
+        fig.className = "fig";
+        fig.innerHTML = `<div style="font-size:13.5px; font-weight:600; padding:0 2px 2px">${label} tanks</div>
+          <div class="legend" id="fleg${gi}"></div>
+          <svg id="fsvg${gi}" viewBox="0 0 980 300" role="img" aria-label="Flow over time, ${label} tanks"></svg>
+          <figcaption>Oxygen flow (liters per minute) from valve-open to empty. Flat steps = a steady dial setting; the final slide to zero = the tank running out.</figcaption>`;
+        figHost.appendChild(fig);
+        draw(`fsvg${gi}`, series,
+             { x0: 0, x1: Math.max(0.5, Math.ceil(maxH * 2) / 2), ymax: Math.ceil(maxF + 0.5),
+               ystep: Math.max(1, Math.ceil((maxF + 0.5) / 4)),
+               xstep: Math.max(0.25, Math.ceil(maxH / 8 * 4) / 4), xlabel: "hours into session" });
+        legend(`fleg${gi}`, series);
+      });
+
+      const kneeRuns = big.filter(r => r.end_flow_s && (r.pct_of_rated || 0) > 90);
+      const s2 = kneeRuns.map(r => {
+        const i = big.indexOf(r);
+        return { name: `${(r.started_at || "").slice(5, 10)} · ${tankLabel(r.tank_capacity_l)}`,
+                 color: COLORS[i % COLORS.length],
+                 data: KNEE.filter(b => b.session_id === r.session_id)
+                           .map(b => [b.bin * 15 / 60, b.flow_slm]) };
+      }).filter(s => s.data.length);
+      draw("c2", s2, { x0: -75, x1: 2, ymax: 8, ystep: 2, xstep: 10,
+                       xlabel: "minutes before the oxygen stopped" });
+      legend("leg2", s2);
+    }
+
+    document.getElementById("updated").textContent =
+      `Loaded ${new Date().toLocaleString()} · ${RUNS.length} cloud session(s) · ` +
+      `analysis refreshes ≤5 min after each run closes`;
+
+    // deep link: #<first 8 of session id>
+    if (location.hash.length > 4) {
+      const r = RUNS.find(x => x.session_id.startsWith(location.hash.slice(1)));
+      if (r) showDetail(r.session_id);
+    }
+  } catch (e) {
+    document.getElementById("updated").innerHTML =
+      `<span class="err">Failed to load: ${e.message}</span> — if analysis views are missing, run supabase/analysis.sql.`;
+  }
+})();
+</script>
+</body>
+</html>
