@@ -86,11 +86,14 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="eyebrow">VolX · Phase 1 Data Campaign</div>
+  <div class="eyebrow">VolX · Tank Characterisation</div>
   <h1 id="title">Test Campaign — Live Dashboard</h1>
-  <p class="sub">Each run below is one oxygen tank recorded on the VolX bench logger — flow measured
-  20 times a second from the moment the valve opens until the tank runs out. The goal: learn how
-  tanks behave as they empty, so the product can warn people <i>before</i> the oxygen stops.</p>
+  <p class="sub">Each run below is one oxygen tank recorded on a VolX unit — flow measured once a
+  second from the moment the valve opens until the tank runs out. The goal: learn how tanks behave
+  as they empty, so the product can warn people <i>before</i> the oxygen stops.</p>
+  <p class="sub" style="margin-top:10px">Campaign:
+    <select id="campaign" style="font:inherit; padding:3px 6px; border-radius:6px; border:1px solid var(--hairline); background:var(--card); color:var(--ink)"></select>
+    <span id="campaign-note" style="margin-left:8px"></span></p>
   <p class="sub" id="updated">Loading…</p>
   <a class="back hidden" id="back">← All runs</a>
 
@@ -116,9 +119,10 @@
     </figure>
 
     <div class="note">
-      Historical context (pre-cloud): VOLX_004 large-tank run — 19.4 h, 1.4 M samples,
-      2,242.7 L, 18.7 min provisional alarm lead, ~55 min knee. Two additional 41 cu ft
-      runs were lost to SD corruption before the pipeline moved to the cloud.
+      Firmware 0.2.0 (campaign <code>tank-char-2</code>): flow sampled once a second, countdown
+      against usable capacity (nameplate less a 5% regulator residual), 15-minute alarm with the
+      droop detector as backstop. Phase 1 ran at 20 Hz with a detent classifier; select it above
+      to compare. Integrator validated −1.5% against weighed mass, 29 Aug 2026.
     </div>
   </div>
 
@@ -186,8 +190,10 @@ function tankLabel(cap) {
   if (!cap) return "unspecified";
   if (Math.abs(cap - 1161) < 10) return "41 cu ft";
   if (Math.abs(cap - 2265) < 15) return "80 cu ft";
+  if (Math.abs(cap - 2407) < 15) return "85 cu ft";
   if (Math.abs(cap - 3596) < 25) return "127 cu ft";
   if (Math.abs(cap - 1699) < 15) return "60 cu ft";
+  if (Math.abs(cap - 708) < 10) return "25 cu ft";
   if (Math.abs(cap - 413) < 10) return "D";
   if (Math.abs(cap - 680) < 10) return "E";
   return Math.round(cap) + " L";
@@ -198,7 +204,7 @@ const SERIES_TARGETS = { "41 cu ft": 6, "127 cu ft": 2 };
 
 // Plain-language outcome for each session status
 const OUTCOME = {
-  recording:   ["IN PROGRESS", "warn"],
+  recording:   ["RECORDING", "warn"],
   closed:      ["COMPLETED", "ok"],
   autostopped: ["RAN TO EMPTY", "ok"],
   aborted:     ["CUT SHORT", "warn"],
@@ -243,7 +249,10 @@ function plateauFeatures(run) {
 // ONLY on step changes (real clicks) and holds through ramps (depletion).
 function believedTimeline(run) {
   const f = plateauFeatures(run);
-  const segs = f.segs.filter(s => s.lpm != null);
+  // 0.2.0+ carries no detent classification: every plateau has lpm = null and
+  // the "setting" is the latched flow itself, rounded to the nearest 0.5 LPM
+  // the way a regulator is labelled.
+  const segs = f.segs.map(s => s.lpm != null ? s : { ...s, lpm: Math.round(s.plateau * 2) / 2 });
   if (!segs.length) return { timeline: [], adjustments: [] };
   const clickTimes = new Set(f.clicks.map(c => c.t));
   const timeline = [];   // {t0, t1, lpm, label}
@@ -277,15 +286,20 @@ function runCommentary(run) {
   if (short) {
     out.push("Short bench session — useful as a pipeline check, excluded from campaign statistics and charts.");
   }
-  if (run.cad_bad === 0 && run.bit11_rows === 0 && run.crc_errors === 0) {
-    out.push(`<span class="good">Data integrity flawless:</span> ${run.n_rows.toLocaleString()} samples, every interval on the 50 ms grid, zero CRC errors, sensor never fell into smoothing.`);
+  const grid = run.sample_period_ms >= 1000 ? `${run.sample_period_ms / 1000} s` : `${run.sample_period_ms || 50} ms`;
+  if (run.live) {
+    out.push(`<span class="warn">Recording now</span> — ${run.n_rows.toLocaleString()} samples so far, ${(run.vol_l || 0).toFixed(1)} L delivered. Integrity, plateaus and the alarm are computed when the run closes.`);
+  } else if (run.cad_bad === 0 && run.bit11_rows === 0 && run.crc_errors === 0) {
+    out.push(`<span class="good">Data integrity flawless:</span> ${run.n_rows.toLocaleString()} samples, every interval on the ${grid} grid, zero CRC errors, sensor never fell into smoothing.`);
   } else {
     out.push(`<span class="warn">Data quality events:</span> ${run.cad_bad} cadence outliers, ${run.bit11_rows} smoothing rows, ${run.crc_errors} CRC errors — worth a closer look with the local tools.`);
   }
   if (run.pct_of_rated != null && !short) {
     const p = run.pct_of_rated;
     if (p >= 90 && p <= 110) {
-      out.push(`Delivered <b>${p.toFixed(1)}%</b> of the tank's rated capacity — a full-to-empty run, and an independent ${Math.abs(p - 100).toFixed(1)}% cross-check on the volume integrator.`);
+      out.push(`Delivered <b>${p.toFixed(1)}%</b> of the tank's nameplate capacity` +
+        (run.pct_of_usable != null ? ` (${run.pct_of_usable.toFixed(1)}% of what the regulator can deliver, after the ${run.residual_pct}% residual)` : "") +
+        ` — a full-to-empty run. The integrator is validated to −1.5% against weighed mass (29 Aug), so anything above ~100% means the cylinder was filled past nameplate, which is normal.`);
     } else if (p < 90) {
       out.push(`Partial run: ${p.toFixed(1)}% of rated capacity delivered — the tank was not emptied (or didn't start full), so no depletion tail here.`);
     } else {
@@ -295,7 +309,7 @@ function runCommentary(run) {
   const bt = believedTimeline(run);
   if (bt.timeline.length && !short) {
     const path = bt.timeline.map(s => s.lpm >= 0 ? s.lpm : "?").join(" → ");
-    out.push(`Believed regulator setting: <b>${path}</b>` +
+    out.push(`Regulator setting (from the latched plateaus): <b>${path}</b>` +
       (bt.adjustments.length
         ? ` — ${bt.adjustments.length} user adjustment${bt.adjustments.length > 1 ? "s" : ""} (` +
           bt.adjustments.map(a => `${a.fromLpm}→${a.toLpm} LPM at ${fmtMin(a.t)}`).join(", ") + ")."
@@ -315,13 +329,19 @@ function runCommentary(run) {
   }
   if (run.alarm_lead_s != null) {
     const lead = run.alarm_lead_s / 60;
-    if (lead < 2) {
-      out.push(`<span class="warn">Alarm lead was only ${fmtMin(run.alarm_lead_s)}</span> at ${run.alarm_flow.toFixed(2)} slm — the provisional detector's re-baselining problem; the anchor-baseline redesign is sized to fix exactly this.`);
+    const kind = run.alarm_kind === "countdown"
+      ? `the <b>countdown</b> (usable remaining ÷ established ${run.est_flow_slm != null ? run.est_flow_slm.toFixed(2) + " slm" : "flow"} fell under ${run.alarm_minutes || 15} min)`
+      : run.alarm_kind === "droop" ? "the <b>droop detector</b> (delivered flow sagged below the established plateau)" : "the alarm";
+    const other = run.alarm_kind === "countdown" && run.droop_t_s != null && run.end_flow_s != null
+      ? ` Droop followed ${fmtMin(run.end_flow_s - run.droop_t_s)} before end of flow.`
+      : run.alarm_kind === "droop" && run.countdown_t_s == null && run.residual_pct != null ? " The countdown never crossed its threshold — check the cylinder setting for this run." : "";
+    if (lead < 10) {
+      out.push(`<span class="warn">Only ${fmtMin(run.alarm_lead_s)} of warning</span> from ${kind}.${other}`);
     } else {
-      out.push(`Alarm fired ${fmtMin(run.alarm_lead_s)} before end of flow at ${run.alarm_flow.toFixed(2)} slm.`);
+      out.push(`<span class="good">${fmtMin(run.alarm_lead_s)} of warning</span> from ${kind}.${other}`);
     }
   } else if (!short && f.staircase >= 4) {
-    out.push(`<span class="warn">No depletion alarm fired</span> despite a captured roll-off — check detector thresholds against this run.`);
+    out.push(`<span class="warn">No alarm fired</span> despite a captured roll-off — check the cylinder setting and detector thresholds against this run.`);
   }
   if (run.status === "autostopped") {
     out.push(`<span class="good">Unattended finish:</span> zero-flow auto-stop closed the session cleanly; the latched alarm kept sounding until acknowledged.`);
@@ -340,10 +360,11 @@ function campaignCommentary(runs) {
     out.push("No campaign runs in the cloud yet — bench checks only. Press the button on a real tank.");
     return out;
   }
-  out.push(`${real.length} campaign run${real.length > 1 ? "s" : ""} in the cloud (${full.length} full-to-empty), on ${caps.join(" / ")} tank${caps.length > 1 ? "s" : ""}.`);
+  const devs = [...new Set(real.map(r => (r.device_id || "").slice(-4).toUpperCase()))];
+  out.push(`${real.length} campaign run${real.length > 1 ? "s" : ""} in the cloud (${full.length} full-to-empty), on ${caps.join(" / ")} tank${caps.length > 1 ? "s" : ""}, across ${devs.length} unit${devs.length > 1 ? "s" : ""} (${devs.join(", ")}).`);
   if (full.length) {
-    const errs = full.map(r => Math.abs(r.pct_of_rated - 100));
-    out.push(`Volume integrator vs rated capacity: within ${Math.max(...errs).toFixed(1)}% on every full run — the user-entered-tank-size fuel gauge remains trustworthy.`);
+    const ps = full.map(r => r.pct_of_rated);
+    out.push(`Delivered ${Math.min(...ps).toFixed(0)}–${Math.max(...ps).toFixed(0)}% of nameplate on the full runs. The integrator reads −1.5% against weighed mass, so the spread here is fill level and regulator residual, not instrument error.`);
   }
   // Warning time grouped by tank size — the campaign's central question
   const bySize = {};
@@ -358,11 +379,13 @@ function campaignCommentary(runs) {
       const v = bySize[s].sort((a, b) => a - b);
       return `${s}: ${v.length > 1 ? v[0].toFixed(1) + "–" + v[v.length - 1].toFixed(1) : v[0].toFixed(1)} min`;
     });
-    out.push(`Warning time before the tank ran out, with today's provisional detector — ${parts.join(" · ")}. ` +
-      `Bigger tanks fade more slowly, so they give more notice.`);
+    const kinds = real.filter(r => r.alarm_kind).reduce((a, r) => (a[r.alarm_kind] = (a[r.alarm_kind] || 0) + 1, a), {});
+    out.push(`Warning before the tank ran out — ${parts.join(" · ")}` +
+      (Object.keys(kinds).length ? ` (first trigger: ${Object.entries(kinds).map(([k, n]) => `${k} ×${n}`).join(", ")})` : "") + ". " +
+      `The target is 15 minutes from the countdown; the droop detector is the backstop and is worth about ten.`);
     const worst = Math.min(...[].concat(...Object.values(bySize)));
-    if (worst < 2) {
-      out.push(`<span class="warn">On the smallest tanks the warning was under 2 minutes</span> — not enough. The planned detector redesign (tested against these same recordings) projects roughly 10× more notice at the same sensitivity.`);
+    if (worst < 10) {
+      out.push(`<span class="warn">At least one run gave under 10 minutes of warning</span> — open it and check whether the cylinder setting matched the bottle; a wrong capacity is the usual cause.`);
     }
   }
   const hys = real.flatMap(r => plateauFeatures(r).hysteresis);
@@ -444,8 +467,9 @@ async function showDetail(sid) {
              r.pct_of_rated ? r.pct_of_rated.toFixed(1) + "% of rated" : "no capacity set") +
     statCard("Tare", (r.tare_slm != null ? r.tare_slm.toFixed(4) : "—") + " slm", "session zero") +
     statCard("Warning before empty", fmtMin(r.alarm_lead_s),
-             r.alarm_flow != null ? "at " + r.alarm_flow.toFixed(2) + " slm" : "no alarm",
-             r.alarm_lead_s != null && r.alarm_lead_s < 120 ? "warn" : "") +
+             r.alarm_kind ? `${r.alarm_kind} first` + (r.alarm_flow != null ? ", at " + r.alarm_flow.toFixed(2) + " slm" : "") : "no alarm",
+             r.alarm_lead_s != null && r.alarm_lead_s < 600 ? "warn" : "") +
+    statCard("Unit", (r.device_id || "").slice(-4).toUpperCase(), `fw ${r.fw_version || "?"} · ${r.campaign || "phase-1"}`) +
     statCard("Quality", quality[0], "cad/b11/crc", quality[1]) +
     statCard("Adjustments", btEarly.adjustments.length,
              btEarly.timeline.length
@@ -477,8 +501,8 @@ async function showDetail(sid) {
          alarmT: r.alarm_t_s != null ? r.alarm_t_s / 3600 : null });
   document.getElementById("d-c1cap").innerHTML =
     `Solid = delivered flow (slm, 1-minute averages). ` +
-    `<span style="color:var(--alarm)">Dashed</span> = believed regulator setting (LPM) — changes only on detected clicks, holds through depletion ramps.` +
-    (r.alarm_t_s != null ? " Amber region = depletion alarm latched." : "");
+    `<span style="color:var(--alarm)">Dashed</span> = regulator setting from the latched plateaus — changes only on step changes, holds through depletion ramps.` +
+    (r.alarm_t_s != null ? ` Amber region = alarm on (${r.alarm_kind} fired first).` : "");
 
   document.getElementById("d-adjust").innerHTML =
     `<tr><th>Time</th><th>Setting</th><th>Delivered before</th><th>Delivered after</th></tr>` +
@@ -503,18 +527,57 @@ async function showDetail(sid) {
 
   const segs = (r.plateaus || []).filter(p => p.t1 - p.t0 >= 5);
   document.getElementById("d-plateaus").innerHTML =
-    `<tr><th>From</th><th>To</th><th>Duration</th><th>Latched</th><th>Classified</th></tr>` +
+    `<tr><th>From</th><th>To</th><th>Duration</th><th>Latched flow</th></tr>` +
     segs.map(p => `<tr>
       <td class="num">${fmtMin(p.t0)}</td><td class="num">${fmtMin(p.t1)}</td>
       <td class="num">${fmtDur(p.t1 - p.t0)}</td>
-      <td class="num">${p.plateau != null ? p.plateau.toFixed(3) + " slm" : "—"}</td>
-      <td class="num">${p.lpm >= 0 ? p.lpm + " LPM" : "unclassified"}</td></tr>`).join("");
+      <td class="num">${p.plateau != null ? p.plateau.toFixed(3) + " slm" : "—"}</td></tr>`).join("");
   window.scrollTo(0, 0);
 }
 
 (async () => {
   try {
-    RUNS = (await q("run_summary?select=*&order=started_at.asc")).filter(r => r.n_rows > 0);
+    // Analyzed runs come from run_summary. Runs still recording are shown
+    // from the sessions table directly, with their live sample count and
+    // volume from the newest sample, because the analyzer takes one session
+    // per 5-minute tick and refreshes a live run only every 30 minutes — a
+    // just-started tank would otherwise be invisible for minutes and stale
+    // for half an hour. Once a run closes, the analyzer's row replaces this.
+    const summarized = (await q("run_summary?select=*&order=started_at.asc")).filter(r => r.n_rows > 0);
+    const live = await q("sessions?select=id,device_id,started_at,status,campaign,fw_version,tank_label,tank_capacity_l,sample_period_ms,residual_pct,alarm_minutes,tare_slm&status=eq.recording&order=started_at.asc");
+    const liveRows = await Promise.all(live.map(async se => {
+      const last = (await q(`samples?select=sample_idx,t_session_s,vol_total_l,crc_errors&session_id=eq.${se.id}&order=sample_idx.desc&limit=1`))[0];
+      const done = summarized.find(r => r.session_id === se.id);
+      const row = done ? { ...done } : {
+        session_id: se.id, device_id: se.device_id, started_at: se.started_at, status: "recording",
+        campaign: se.campaign, fw_version: se.fw_version, tank_label: se.tank_label,
+        tank_capacity_l: se.tank_capacity_l, sample_period_ms: se.sample_period_ms,
+        residual_pct: se.residual_pct, alarm_minutes: se.alarm_minutes, tare_slm: se.tare_slm,
+        cad_bad: 0, bit11_rows: 0, crc_errors: 0, plateaus: [], live: true,
+      };
+      if (last) {          // newest sample beats a stale summary while recording
+        row.n_rows = last.sample_idx + 1; row.dur_s = last.t_session_s; row.vol_l = last.vol_total_l;
+        row.crc_errors = last.crc_errors; row.live = true;
+        row.pct_of_rated = se.tank_capacity_l > 0 ? 100 * last.vol_total_l / se.tank_capacity_l : null;
+      }
+      return row;
+    }));
+    const liveIds = new Set(liveRows.map(r => r.session_id));
+    const ALL = [...summarized.filter(r => !liveIds.has(r.session_id)), ...liveRows.filter(r => r.n_rows > 0)]
+      .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
+    // Campaign selector: newest campaign by first session wins as the default.
+    const camps = [...new Set(ALL.map(r => r.campaign || "phase-1"))];
+    const firstSeen = c => Math.min(...ALL.filter(r => (r.campaign || "phase-1") === c).map(r => Date.parse(r.started_at)));
+    camps.sort((a, b) => firstSeen(b) - firstSeen(a));
+    const sel = document.getElementById("campaign");
+    sel.innerHTML = camps.map(c => `<option value="${c}">${c}</option>`).join("") + `<option value="*">all campaigns</option>`;
+    const want = new URLSearchParams(location.search).get("campaign") || camps[0];
+    sel.value = camps.includes(want) || want === "*" ? want : camps[0];
+    sel.addEventListener("change", () => { location.search = "?campaign=" + encodeURIComponent(sel.value); });
+    RUNS = sel.value === "*" ? ALL : ALL.filter(r => (r.campaign || "phase-1") === sel.value);
+    document.getElementById("campaign-note").textContent =
+      sel.value === "*" ? `${ALL.length} sessions, all campaigns`
+      : `${RUNS.length} of ${ALL.length} sessions · firmware ${[...new Set(RUNS.map(r => r.fw_version))].join(", ") || "—"}`;
     const big = RUNS.filter(r => r.dur_s >= 300);
 
     const nRows = RUNS.reduce((a, r) => a + (r.n_rows || 0), 0);
@@ -557,12 +620,13 @@ async function showDetail(sid) {
       return `<tr class="run" data-sid="${r.session_id}">
         <td><span class="dot" style="background:${c}"></span>${(r.started_at || "").slice(0, 10)}</td>
         <td class="num">${(r.started_at || "").slice(11, 16)}</td>
+        <td class="num">${(r.device_id || "").slice(-4).toUpperCase()}</td>
         <td>${outcomePill(r.status)}</td>
         <td class="num">${fmtDur(r.dur_s)}</td>
         <td class="num">${(r.vol_l || 0).toFixed(1)} L</td>
         <td class="num">${r.pct_of_rated ? r.pct_of_rated.toFixed(0) + "%" : "—"}</td>
         <td class="num">${r.dur_s >= 300 ? nAdj : "—"}</td>
-        <td class="num">${fmtMin(r.alarm_lead_s)}</td>
+        <td class="num">${fmtMin(r.alarm_lead_s)}${r.alarm_kind ? ` <span class="tank">${r.alarm_kind}</span>` : ""}</td>
         <td>${quality}</td></tr>`;
     };
     document.getElementById("runtables").innerHTML = groupOrder.map(label => {
@@ -571,8 +635,8 @@ async function showDetail(sid) {
       return `<h2 style="font-size:15.5px; margin:22px 0 6px">${label} tanks
           <span class="sub" style="font-weight:400">${cap ? "— " + Math.round(cap).toLocaleString() + " L of oxygen when full" : ""}</span></h2>
         <div class="tablewrap"><table>
-        <tr><th>Date</th><th>Start</th><th>Outcome</th><th>Length</th>
-        <th>Oxygen delivered</th><th>% of tank</th><th>Dial changes</th>
+        <tr><th>Date</th><th>Start</th><th>Unit</th><th>Outcome</th><th>Length</th>
+        <th>Oxygen delivered</th><th>% of nameplate</th><th>Dial changes</th>
         <th>Warning before empty</th><th>Data quality</th></tr>` +
         rs.map(runRow).join("") + `</table></div>`;
     }).join("");
@@ -630,7 +694,7 @@ async function showDetail(sid) {
     }
 
     document.getElementById("updated").textContent =
-      `Loaded ${new Date().toLocaleString()} · ${RUNS.length} cloud session(s) · ` +
+      `Loaded ${new Date().toLocaleString()} · ${RUNS.length} session(s) in view · ` +
       `analysis refreshes ≤5 min after each run closes`;
 
     // deep link: #<first 8 of session id>
@@ -640,7 +704,7 @@ async function showDetail(sid) {
     }
   } catch (e) {
     document.getElementById("updated").innerHTML =
-      `<span class="err">Failed to load: ${e.message}</span> — if analysis views are missing, run supabase/analysis.sql.`;
+      `<span class="err">Failed to load: ${e.message}</span> — if analysis views are missing, run supabase/analysis_v3.sql.`;
   }
 })();
 </script>
