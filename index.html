@@ -630,6 +630,7 @@ async function showDetail(sid) {
         <td><span class="dot" style="background:${c}"></span>${(r.started_at || "").slice(0, 10)}</td>
         <td class="num">${(r.started_at || "").slice(11, 16)}</td>
         <td class="num">${unitName(r.device_id)}</td>
+        <td class="num">${r.fw_version || "—"}</td>
         <td>${outcomePill(r.status)}</td>
         <td class="num">${fmtDur(r.dur_s)}</td>
         <td class="num">${(r.vol_l || 0).toFixed(1)} L</td>
@@ -644,7 +645,7 @@ async function showDetail(sid) {
       return `<h2 style="font-size:15.5px; margin:22px 0 6px">${label} tanks
           <span class="sub" style="font-weight:400">${cap ? "— " + Math.round(cap).toLocaleString() + " L of oxygen when full" : ""}</span></h2>
         <div class="tablewrap"><table>
-        <tr><th>Date</th><th>Start</th><th>Unit</th><th>Outcome</th><th>Length</th>
+        <tr><th>Date</th><th>Start</th><th>Unit</th><th>Firmware</th><th>Outcome</th><th>Length</th>
         <th>Oxygen delivered</th><th>% of nameplate</th><th>Dial changes</th>
         <th>Warning before empty</th><th>Data quality</th></tr>` +
         rs.map(runRow).join("") + `</table></div>`;
