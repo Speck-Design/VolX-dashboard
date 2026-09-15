@@ -181,6 +181,11 @@ async function qAll(path) {
   }
 }
 
+// Device registry (migration 008): MAC -> name. Falls back to the last four
+// hex digits of the MAC for a unit that has not been registered yet.
+let DEVICES = {};
+const unitName = id => (DEVICES[id] && DEVICES[id].name) || (id || "").slice(-4).toUpperCase();
+
 const fmtMin = s => s == null ? "—" : (s / 60).toFixed(1) + " min";
 const fmtDur = s => s == null ? "—" : (s >= 5400 ? (s / 3600).toFixed(1) + " h" : (s / 60).toFixed(1) + " min");
 const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -360,7 +365,7 @@ function campaignCommentary(runs) {
     out.push("No campaign runs in the cloud yet — bench checks only. Press the button on a real tank.");
     return out;
   }
-  const devs = [...new Set(real.map(r => (r.device_id || "").slice(-4).toUpperCase()))];
+  const devs = [...new Set(real.map(r => unitName(r.device_id)))];
   out.push(`${real.length} campaign run${real.length > 1 ? "s" : ""} in the cloud (${full.length} full-to-empty), on ${caps.join(" / ")} tank${caps.length > 1 ? "s" : ""}, across ${devs.length} unit${devs.length > 1 ? "s" : ""} (${devs.join(", ")}).`);
   if (full.length) {
     const ps = full.map(r => r.pct_of_rated);
@@ -469,7 +474,8 @@ async function showDetail(sid) {
     statCard("Warning before empty", fmtMin(r.alarm_lead_s),
              r.alarm_kind ? `${r.alarm_kind} first` + (r.alarm_flow != null ? ", at " + r.alarm_flow.toFixed(2) + " slm" : "") : "no alarm",
              r.alarm_lead_s != null && r.alarm_lead_s < 600 ? "warn" : "") +
-    statCard("Unit", (r.device_id || "").slice(-4).toUpperCase(), `fw ${r.fw_version || "?"} · ${r.campaign || "phase-1"}`) +
+    statCard("Unit", unitName(r.device_id), `fw ${r.fw_version || "?"} · ${r.campaign || "phase-1"}` +
+             (DEVICES[r.device_id] && DEVICES[r.device_id].status !== "active" ? ` · ${DEVICES[r.device_id].status}` : "")) +
     statCard("Quality", quality[0], "cad/b11/crc", quality[1]) +
     statCard("Adjustments", btEarly.adjustments.length,
              btEarly.timeline.length
@@ -543,6 +549,9 @@ async function showDetail(sid) {
     // per 5-minute tick and refreshes a live run only every 30 minutes — a
     // just-started tank would otherwise be invisible for minutes and stale
     // for half an hour. Once a run closes, the analyzer's row replaces this.
+    try {
+      for (const d of await q("devices?select=device_id,name,hw_rev,status,notes")) DEVICES[d.device_id] = d;
+    } catch (_) { /* registry not migrated yet: names fall back to MAC digits */ }
     const summarized = (await q("run_summary?select=*&order=started_at.asc")).filter(r => r.n_rows > 0);
     const live = await q("sessions?select=id,device_id,started_at,status,campaign,fw_version,tank_label,tank_capacity_l,sample_period_ms,residual_pct,alarm_minutes,tare_slm&status=eq.recording&order=started_at.asc");
     const liveRows = await Promise.all(live.map(async se => {
@@ -620,7 +629,7 @@ async function showDetail(sid) {
       return `<tr class="run" data-sid="${r.session_id}">
         <td><span class="dot" style="background:${c}"></span>${(r.started_at || "").slice(0, 10)}</td>
         <td class="num">${(r.started_at || "").slice(11, 16)}</td>
-        <td class="num">${(r.device_id || "").slice(-4).toUpperCase()}</td>
+        <td class="num">${unitName(r.device_id)}</td>
         <td>${outcomePill(r.status)}</td>
         <td class="num">${fmtDur(r.dur_s)}</td>
         <td class="num">${(r.vol_l || 0).toFixed(1)} L</td>
